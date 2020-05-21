@@ -3,7 +3,7 @@ project(vulkan-playground)
 enable_language(C)
 
 set(CMAKE_C_COMPILER /usr/bin/clang)
-set(CMAKE_C_FLAGS -g)
+set(CMAKE_C_FLAGS "-g" )
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Vulkan REQUIRED)
