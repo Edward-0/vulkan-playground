@@ -482,18 +482,12 @@ VkExtent2D getSwapExtent(const VkSurfaceCapabilitiesKHR capabilities) {
 	return ret;
 }
 
-VkSwapchainKHR createSwapChain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, struct QueueFamilyIndicies indices) {
+VkSwapchainKHR createSwapChain(VkPhysicalDevice physicalDevice, VkDevice device, VkSurfaceKHR surface, VkSurfaceCapabilitiesKHR capabilities, VkSurfaceFormatKHR surfaceFormat, VkPresentModeKHR presentMode, VkExtent2D extent, struct QueueFamilyIndicies indices) {
 
-	struct SwapChainSupportDetails swapChainSupport = getSwapChainSupport(physicalDevice, surface);
+	uint32_t imageCount = capabilities.minImageCount + 1;
 
-	VkSurfaceFormatKHR surfaceFormat = getSwapSurfaceFormat(swapChainSupport);
-	VkPresentModeKHR presentMode = getPresentMode(swapChainSupport);
-	VkExtent2D extent = getSwapExtent(swapChainSupport.capabilities);
-
-	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-
-	if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
-		imageCount = swapChainSupport.capabilities.maxImageCount;
+	if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
+		imageCount = capabilities.maxImageCount;
 	}
 
 	VkSwapchainCreateInfoKHR createInfo = {0};
@@ -521,7 +515,7 @@ VkSwapchainKHR createSwapChain(VkPhysicalDevice physicalDevice, VkDevice device,
 		createInfo.pQueueFamilyIndices = NULL; // Optional
 	}
 
-	createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+	createInfo.preTransform = capabilities.currentTransform;
 	createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 	createInfo.presentMode = presentMode;
 	createInfo.clipped = VK_TRUE;
@@ -552,6 +546,21 @@ VkImage *getSwapChainImages(VkDevice device, VkSwapchainKHR swapChain, uint32_t 
 
 	return ret;
 
+}
+
+VkImageView *createImageViews(VkFormat format, uint32_t imageCount, VkImage* swapChainImages) {
+	VkImageView *ret = malloc(sizeof(VkImageView) * imageCount);
+	
+	for (int i = 0; i < imageCount; i ++) {
+		VkImageViewCreateInfo createInfo = {0};
+		createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		createInfo.image = swapChainImages[i];
+
+		createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		createInfo.format = format;
+	}
+
+	return ret;
 }
 
 int main() {
@@ -590,11 +599,23 @@ int main() {
 
 	VkQueue graphicsQueue = getGraphicsQueue(device, queueFamilies);
 
-	VkSwapchainKHR swapChain = createSwapChain(physicalDevice, device, surface, queueFamilies);
 
+
+	struct SwapChainSupportDetails swapChainSupport = getSwapChainSupport(physicalDevice, surface);
+
+	VkSurfaceFormatKHR surfaceFormat = getSwapSurfaceFormat(swapChainSupport);
+	VkPresentModeKHR presentMode = getPresentMode(swapChainSupport);
+	VkExtent2D extent = getSwapExtent(swapChainSupport.capabilities);
+
+
+	VkSwapchainKHR swapChain = createSwapChain(physicalDevice, device, surface, swapChainSupport.capabilities, surfaceFormat, presentMode, extent, queueFamilies);
 
 	uint32_t imageCount;
 	VkImage *images = getSwapChainImages(device, swapChain, &imageCount);
+
+	createImageViews(surfaceFormat.format, imageCount, images);
+
+	
 
 	while(glfwWindowShouldClose(window)) {
 		glfwPollEvents();
