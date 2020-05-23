@@ -2,10 +2,93 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <AL/al.h>
+#include <AL/alc.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 #include <sys/param.h>
+
+struct Vec4 {
+	union {
+		float x;
+		float r;
+	};
+	union {
+		float y;
+		float g;
+	};
+	union {
+		float z;
+		float b;
+	};
+	union {
+		float w;
+		float a;
+	};
+};
+
+struct Vec3 {
+	union {
+		float x;
+		float r;
+	};
+	union {
+		float y;
+		float g;
+	};
+	union {
+		float z;
+		float b;
+	};
+};
+
+struct Vec2 {
+	union {
+		float x;
+		float r;
+	};
+	union {
+		float y;
+		float g;
+	};
+};
+
+struct Vertex {
+	struct Vec2 position;
+	struct Vec3 colour;
+};
+
+const struct Vertex vertices[3] = {
+	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+
+VkVertexInputBindingDescription getVertexBindingDescription() {
+	VkVertexInputBindingDescription bindingDescription = {};
+	bindingDescription.binding = 0;
+	bindingDescription.stride = sizeof(struct Vertex);
+	bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+	return bindingDescription;
+}
+
+VkVertexInputAttributeDescription *getVertexAttributeBindingDescriptions() {
+	VkVertexInputAttributeDescription *attributeDescriptions = malloc(sizeof(VkVertexInputAttributeDescription) * 2);
+
+	attributeDescriptions[0].binding = 0;
+	attributeDescriptions[0].location = 0;
+	attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+	attributeDescriptions[0].offset = offsetof(struct Vertex, position);
+	
+	attributeDescriptions[1].binding = 0;
+	attributeDescriptions[1].location = 1;
+	attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+	attributeDescriptions[1].offset = offsetof(struct Vertex, colour);
+
+	return attributeDescriptions;
+}
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -14,9 +97,11 @@ struct List {
 	void *data;
 };
 
-struct Semaphores {
-	VkSemaphore imageAvailable;
-	VkSemaphore renderFinished;
+struct SyncObjects {
+	VkSemaphore *imageAvailable;
+	VkSemaphore *renderFinished;
+	VkFence *inFlightFence;
+	VkFence *imageInFlight;
 };
 
 struct SwapChainSupportDetails {
@@ -390,11 +475,11 @@ VkDevice createLogicalDevice(VkPhysicalDevice physicalDevice, struct QueueFamily
 	}
 
 	createInfo.pQueueCreateInfos = queueCreateInfos;
-//	if (indices.graphicsFamily == indices.presentFamily) {
+	if (indices.graphicsFamily == indices.presentFamily) {
 		createInfo.queueCreateInfoCount = 1; // Hack can't be bothered to check for duplicate queue families
-//	} else {
-//		createInfo.queueCreateInfoCount = 2;
-//	}
+	} else {
+		createInfo.queueCreateInfoCount = 2;
+	}
 
 	createInfo.pEnabledFeatures = &deviceFeatures;
 
@@ -667,13 +752,16 @@ VkPipeline createPipeline(VkDevice device, VkExtent2D swapChainExtent, VkRenderP
 
 	VkPipelineShaderStageCreateInfo shaderStages[2] = {vertShaderStageInfo, fragShaderStageInfo};
 
-
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo = {0};
+	
+	VkVertexInputBindingDescription bindingDescription = getVertexBindingDescription();
+	VkVertexInputAttributeDescription *attributeDescriptions = getVertexAttributeBindingDescriptions();
+
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertexInputInfo.vertexBindingDescriptionCount = 0;
-	vertexInputInfo.pVertexBindingDescriptions = NULL; // Optional
-	vertexInputInfo.vertexAttributeDescriptionCount = 0;
-	vertexInputInfo.pVertexAttributeDescriptions = NULL; // Optional
+	vertexInputInfo.vertexBindingDescriptionCount = 1;
+	vertexInputInfo.pVertexBindingDescriptions = &bindingDescription; // Optional
+	vertexInputInfo.vertexAttributeDescriptionCount = 2;
+	vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions; // Optional
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssembly = {0};
 	inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -951,34 +1039,60 @@ VkCommandBuffer *createCommandBuffers(VkDevice device, VkPipeline pipeline, VkRe
 	return ret;
 }
 
-struct Semaphores createSemaphores(VkDevice device) {
-	struct Semaphores ret; 
+struct SyncObjects createSyncObjects(VkDevice device, uint32_t count) {
+	struct SyncObjects ret;
+	ret.imageAvailable = malloc(sizeof(VkSemaphore) * MAX_FRAMES_IN_FLIGHT); 
+	ret.renderFinished = malloc(sizeof(VkSemaphore) * MAX_FRAMES_IN_FLIGHT);
+	ret.inFlightFence = malloc(sizeof(VkFence) * MAX_FRAMES_IN_FLIGHT);
+	ret.imageInFlight = malloc(sizeof(VkFence) * count);
+
+	for (int i = 0; i < count; i++) {
+		ret.imageInFlight[i] = VK_NULL_HANDLE;
+	}
 
 	VkSemaphoreCreateInfo semaphoreInfo = {0};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	
-	if (vkCreateSemaphore(device, &semaphoreInfo, NULL, &ret.imageAvailable) != VK_SUCCESS) {
-		fprintf(stderr, "Failed to create image available semaphore!\n");
-		exit(EXIT_FAILURE);
-	}
 
-	if (vkCreateSemaphore(device, &semaphoreInfo, NULL, &ret.renderFinished) != VK_SUCCESS) {
-		fprintf(stderr, "Failed to create image available semaphore!\n");
-		exit(EXIT_FAILURE);
-	}
+	VkFenceCreateInfo fenceInfo = {0};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+		if (vkCreateSemaphore(device, &semaphoreInfo, NULL, &ret.imageAvailable[i]) != VK_SUCCESS) {
+			fprintf(stderr, "Failed to create image available semaphore for frame %d!\n", i);
+			exit(EXIT_FAILURE);
+		}
 
+		if (vkCreateSemaphore(device, &semaphoreInfo, NULL, &ret.renderFinished[i]) != VK_SUCCESS) {
+			fprintf(stderr, "Failed to create image available semaphore for frame %d!\n", i);
+			exit(EXIT_FAILURE);
+		}
+
+		if (vkCreateFence(device, &fenceInfo, NULL, &ret.inFlightFence[i]) != VK_SUCCESS) {
+			fprintf(stderr, "Failed to create in flight fence for frame %d!\n", i);
+			exit(EXIT_FAILURE);
+		}
+	}
 	return ret;
 }
 
-void drawFrame(VkDevice device, VkSwapchainKHR swapChain, VkQueue graphicsQueue, VkQueue presentQueue, VkCommandBuffer *commandBuffers, struct Semaphores semaphores) {
-	uint32_t imageIndex;
-	vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, semaphores.imageAvailable, VK_NULL_HANDLE, &imageIndex);
+void drawFrame(VkDevice device, VkSwapchainKHR swapChain, VkQueue graphicsQueue, VkQueue presentQueue, VkCommandBuffer *commandBuffers, struct SyncObjects semaphores, uint32_t currentFrame) {
+	vkWaitForFences(device, 1, (semaphores.inFlightFence + currentFrame), VK_TRUE, UINT64_MAX);
+	//vkResetFences(device, 1, &semaphores.inFlightFence[currentFrame]);
 
+	uint32_t imageIndex;
+	//printf("%d\n", imageIndex);
+	vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, semaphores.imageAvailable[currentFrame], VK_NULL_HANDLE, &imageIndex);
+
+	if (semaphores.imageInFlight[imageIndex] != VK_NULL_HANDLE) {
+		vkWaitForFences(device, 1, &semaphores.imageInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+	}
+
+	semaphores.imageInFlight[imageIndex] = semaphores.inFlightFence[currentFrame];
 
 	VkSubmitInfo submitInfo = {0};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-	VkSemaphore waitSemaphores[] = {semaphores.imageAvailable};
+	VkSemaphore waitSemaphores[] = {semaphores.imageAvailable[currentFrame]};
 	VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 	submitInfo.waitSemaphoreCount = 1;
 	submitInfo.pWaitSemaphores = waitSemaphores;
@@ -987,11 +1101,13 @@ void drawFrame(VkDevice device, VkSwapchainKHR swapChain, VkQueue graphicsQueue,
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
-	VkSemaphore signalSemaphores[] = {semaphores.renderFinished};
+	VkSemaphore signalSemaphores[] = {semaphores.renderFinished[currentFrame]};
 	submitInfo.signalSemaphoreCount = 1;
 	submitInfo.pSignalSemaphores = signalSemaphores;
 
-	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+	vkResetFences(device, 1, (semaphores.inFlightFence + currentFrame));
+
+	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, semaphores.inFlightFence[currentFrame]) != VK_SUCCESS) {
 		fprintf(stderr, "Failed to submit draw command buffer\n");
 		exit(EXIT_FAILURE);
 	}
@@ -1010,6 +1126,39 @@ void drawFrame(VkDevice device, VkSwapchainKHR swapChain, VkQueue graphicsQueue,
 	presentInfo.pResults = NULL;
 
 	vkQueuePresentKHR(presentQueue, &presentInfo);
+
+	//vkQueueWaitIdle(presentQueue);	
+}
+
+VkBuffer createVertexBuffer(VkDevice device) {
+	VkBuffer ret;
+
+	VkBufferCreateInfo bufferInfo = {0};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size = sizeof(struct Vertex) * 3;
+	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	if (vkCreateBuffer(device, &bufferInfo, NULL, &ret) != VK_SUCCESS) {
+		fprintf(stderr, "Failed to create vertex buffer!\n");
+		exit(EXIT_FAILURE);
+	}
+
+	return ret;
+}
+
+uint32_t getMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+	VkPhysicalDeviceMemoryProperties memProperties;
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+	for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+    	if (typeFilter & (1 << i)) {
+        	return i;
+    	}
+	}
+
+	fprintf(stderr, "Failed to get suitible memory type");
+	exit(EXIT_FAILURE);
 }
 
 int main() {
@@ -1075,26 +1224,32 @@ int main() {
 
 	VkCommandBuffer *commandBuffers = createCommandBuffers(device, pipeline, renderPass, extent, commandPool, imageCount, framebuffers);
 	
-	struct Semaphores semaphores = createSemaphores(device);
+	struct SyncObjects syncObjects = createSyncObjects(device, imageCount);
 
-	glfwShowWindow(window);
+	VkBuffer vertexBuffer = createVertexBuffer(device);
 
+	uint32_t currentFrame = 0;
 	while(!glfwWindowShouldClose(window)) {
+//		printf("frame: %d\n", currentFrame);
 		glfwPollEvents();
-		drawFrame(device, swapChain, graphicsQueue, presentQueue, commandBuffers, semaphores);
+		drawFrame(device, swapChain, graphicsQueue, presentQueue, commandBuffers, syncObjects, currentFrame);
+		currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	}
 
-	if (enableValidationLayers) {
-		DestroyDebugUtilsMessengerEXT(instance, debugMessenger, NULL);
-	}
+	vkDeviceWaitIdle(device);
+
+	vkDestroyBuffer(device, vertexBuffer, NULL);
 
 	for (int i = 0; i < imageCount; i++) {
 		vkDestroyImageView(device, imageViews[i], NULL);
 		vkDestroyFramebuffer(device, framebuffers[i], NULL);
 	}
 
-	vkDestroySemaphore(device, semaphores.imageAvailable, NULL);
-	vkDestroySemaphore(device, semaphores.renderFinished, NULL);
+	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+		vkDestroySemaphore(device, syncObjects.imageAvailable[i], NULL);
+		vkDestroySemaphore(device, syncObjects.renderFinished[i], NULL);
+		vkDestroyFence(device, syncObjects.inFlightFence[i], NULL);
+	}
 
 	vkDestroyCommandPool(device, commandPool, NULL);
 
@@ -1107,6 +1262,10 @@ int main() {
 	vkDestroySwapchainKHR(device, swapChain, NULL);
 
 	vkDestroySurfaceKHR(instance, surface, NULL);
+	
+	if (enableValidationLayers) {
+		DestroyDebugUtilsMessengerEXT(instance, debugMessenger, NULL);
+	}
 
 	vkDestroyDevice(device, NULL);
 

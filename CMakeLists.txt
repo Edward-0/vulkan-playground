@@ -7,13 +7,28 @@ set(CMAKE_C_FLAGS "-g" )
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Vulkan REQUIRED)
+find_package(OpenAL REQUIRED)
 find_package(glfw3 REQUIRED CONFIG)
 
 include_directories(${VULKAN_INCLUDE_DIRS})
+include_directories(${OPENAL_INCLUDE_DIR})
 include_directories(${GLFW3_INCLUDE_DIR})
 
-add_executable(vulkan-playground src/main.c)
 
-target_link_libraries(vulkan-playground glfw vulkan)
+function(add_spirv_shader SHADER_STAGE INPUT_FILE OUTPUT_FILE)
+	add_custom_command(
+		OUTPUT ${OUTPUT_FILE}
+		COMMAND glslc -fshader-stage=${SHADER_STAGE} ${INPUT_FILE} -o ${OUTPUT_FILE}
+		MAIN_DEPENDENCY ${INPUT_FILE}
+	)
+endfunction()
+
+add_spirv_shader(frag "${CMAKE_SOURCE_DIR}/src/shader.frag" frag.spv)
+
+add_custom_target(shaders ALL DEPENDS frag.spv)
+
+add_executable(vulkan-playground src/main.c frag.spv)
+
+target_link_libraries(vulkan-playground glfw vulkan openal)
 
 install(TARGETS vulkan-playground)
