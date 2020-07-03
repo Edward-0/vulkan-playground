@@ -23,11 +23,12 @@ function(add_spirv_shader SHADER_STAGE INPUT_FILE OUTPUT_FILE)
 	)
 endfunction()
 
+add_spirv_shader(vert "${CMAKE_SOURCE_DIR}/src/shader.vert" vert.spv)
 add_spirv_shader(frag "${CMAKE_SOURCE_DIR}/src/shader.frag" frag.spv)
 
-add_custom_target(shaders ALL DEPENDS frag.spv)
+add_custom_target(shaders ALL DEPENDS vert.spv frag.spv)
 
-add_executable(vulkan-playground src/main.c frag.spv)
+add_executable(vulkan-playground src/main.c vert.spv frag.spv)
 
 target_link_libraries(vulkan-playground glfw vulkan openal)
 

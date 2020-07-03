@@ -60,7 +60,7 @@ struct Vertex {
 };
 
 const struct Vertex vertices[3] = {
-	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	{{0.0f, -0.5f}, {1.0f, 1.0f, 1.0f}},
 	{{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
 	{{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
 };
@@ -816,13 +816,13 @@ VkPipeline createPipeline(VkDevice device, VkExtent2D swapChainExtent, VkRenderP
 
 	VkPipelineColorBlendAttachmentState colorBlendAttachment = {0};
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	colorBlendAttachment.blendEnable = VK_FALSE;
-	colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
-	colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-	colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD; // Optional
-	colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
-	colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
-	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD; // Optional
+//	colorBlendAttachment.blendEnable = VK_FALSE;
+//	colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
+//	colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
+//	colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD; // Optional
+//	colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
+//	colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
+//	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD; // Optional
 
 	colorBlendAttachment.blendEnable = VK_TRUE;
 	colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -986,7 +986,7 @@ VkCommandPool createCommandPool(VkDevice device, struct QueueFamilyIndices queue
 	return ret;
 }
 
-VkCommandBuffer *createCommandBuffers(VkDevice device, VkPipeline pipeline, VkRenderPass renderPass, VkExtent2D extent, VkCommandPool commandPool, uint32_t count, VkFramebuffer *framebuffers) {
+VkCommandBuffer *createCommandBuffers(VkDevice device, VkPipeline pipeline, VkRenderPass renderPass, VkExtent2D extent, VkCommandPool commandPool, uint32_t count, VkFramebuffer *framebuffers, VkBuffer vertexBuffer) {
 	VkCommandBuffer *ret = malloc(sizeof(VkCommandBuffer) * count);
 
 	VkCommandBufferAllocateInfo allocInfo = {};
@@ -1018,13 +1018,19 @@ VkCommandBuffer *createCommandBuffers(VkDevice device, VkPipeline pipeline, VkRe
 		renderPassInfo.renderArea.offset = (VkOffset2D) {0, 0};
 		renderPassInfo.renderArea.extent = extent;
 
-		VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 1.0f};
+		VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 0.0f};
 		renderPassInfo.clearValueCount = 1;
 		renderPassInfo.pClearValues = &clearColor;
 
 		vkCmdBeginRenderPass(ret[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-	
+
 		vkCmdBindPipeline(ret[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+		VkBuffer vertexBuffers[] = {vertexBuffer};
+		VkDeviceSize offsets[] = {0};
+		vkCmdBindVertexBuffers(ret[i], 0, 1, vertexBuffers, offsets);
+
+
 
 		vkCmdDraw(ret[i], 3, 1, 0, 0);
 
@@ -1130,23 +1136,6 @@ void drawFrame(VkDevice device, VkSwapchainKHR swapChain, VkQueue graphicsQueue,
 	//vkQueueWaitIdle(presentQueue);	
 }
 
-VkBuffer createVertexBuffer(VkDevice device) {
-	VkBuffer ret;
-
-	VkBufferCreateInfo bufferInfo = {0};
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.size = sizeof(struct Vertex) * 3;
-	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-	if (vkCreateBuffer(device, &bufferInfo, NULL, &ret) != VK_SUCCESS) {
-		fprintf(stderr, "Failed to create vertex buffer!\n");
-		exit(EXIT_FAILURE);
-	}
-
-	return ret;
-}
-
 uint32_t getMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
 	VkPhysicalDeviceMemoryProperties memProperties;
 	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
@@ -1159,6 +1148,50 @@ uint32_t getMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkM
 
 	fprintf(stderr, "Failed to get suitible memory type");
 	exit(EXIT_FAILURE);
+}
+
+struct VertexBuffer {
+	VkBuffer buffer;
+	VkDeviceMemory memory;
+};
+
+struct VertexBuffer createVertexBuffer(VkPhysicalDevice physicalDevice, VkDevice device) {
+	struct VertexBuffer ret;
+
+	VkBufferCreateInfo bufferInfo = {0};
+	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufferInfo.size = sizeof(struct Vertex) * 3;
+	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	if (vkCreateBuffer(device, &bufferInfo, NULL, &ret.buffer) != VK_SUCCESS) {
+		fprintf(stderr, "Failed to create vertex buffer!\n");
+		exit(EXIT_FAILURE);
+	}
+	
+	VkMemoryRequirements memRequirements;
+	vkGetBufferMemoryRequirements(device, ret.buffer, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo = {0};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = getMemoryType(physicalDevice, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	if (vkAllocateMemory(device, &allocInfo, NULL, &ret.memory) != VK_SUCCESS) {
+		fprintf(stderr, "Failed to allocate memory for vertex buffer!\n");
+		exit(EXIT_FAILURE);
+	}
+
+	vkBindBufferMemory(device, ret.buffer, ret.memory, 0);
+
+	void *data;
+	vkMapMemory(device, ret.memory, 0, bufferInfo.size, 0, &data);
+	{
+		memcpy(data, vertices, bufferInfo.size);
+	}
+	vkUnmapMemory(device, ret.memory);
+
+	return ret;
 }
 
 int main() {
@@ -1221,12 +1254,12 @@ int main() {
 	VkFramebuffer *framebuffers = createFrameBuffers(device, renderPass, extent, imageCount, imageViews);
 
 	VkCommandPool commandPool = createCommandPool(device, queueFamilies);
+	
+	struct VertexBuffer vertexBuffer = createVertexBuffer(physicalDevice, device);
 
-	VkCommandBuffer *commandBuffers = createCommandBuffers(device, pipeline, renderPass, extent, commandPool, imageCount, framebuffers);
+	VkCommandBuffer *commandBuffers = createCommandBuffers(device, pipeline, renderPass, extent, commandPool, imageCount, framebuffers, vertexBuffer.buffer);
 	
 	struct SyncObjects syncObjects = createSyncObjects(device, imageCount);
-
-	VkBuffer vertexBuffer = createVertexBuffer(device);
 
 	uint32_t currentFrame = 0;
 	while(!glfwWindowShouldClose(window)) {
@@ -1238,7 +1271,8 @@ int main() {
 
 	vkDeviceWaitIdle(device);
 
-	vkDestroyBuffer(device, vertexBuffer, NULL);
+	vkDestroyBuffer(device, vertexBuffer.buffer, NULL);
+	vkFreeMemory(device, vertexBuffer.memory, NULL);
 
 	for (int i = 0; i < imageCount; i++) {
 		vkDestroyImageView(device, imageViews[i], NULL);
