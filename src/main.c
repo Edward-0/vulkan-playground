@@ -2,8 +2,6 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
-#include <AL/al.h>
-#include <AL/alc.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -209,10 +207,12 @@ char const ** getRequiredExtensions(uint32_t *count) {
 	glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 	
 	if (enableValidationLayers) {
-		*count = glfwExtensionCount + 1;
+		*count = glfwExtensionCount + 2;
+
 		ret = malloc(sizeof(char const *) * (*count));
 		memcpy(ret, glfwExtensions, sizeof(char const *) * (*count));
 		ret[glfwExtensionCount] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
+		ret[glfwExtensionCount + 1] = VK_KHR_DISPLAY_EXTENSION_NAME;
 	} else {
 		*count = glfwExtensionCount + extensionNameCount;
 		ret = glfwExtensions;
@@ -236,7 +236,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 VkDebugUtilsMessengerCreateInfoEXT createDebugUtilsMessengerCreateInfo() {
 	VkDebugUtilsMessengerCreateInfoEXT ret = {};
 	ret.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-	ret.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+	ret.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
 	ret.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
 	ret.pfnUserCallback = debugCallback;
 	ret.pUserData = NULL; // Optional	
@@ -520,6 +520,16 @@ VkQueue getPresentQueue(VkDevice device, struct QueueFamilyIndices indices) {
 VkSurfaceKHR createSurface(VkInstance instance, GLFWwindow* window) {
 	VkSurfaceKHR surface;
 	glfwCreateWindowSurface(instance, window, NULL, &surface);
+	return surface;
+}
+
+VkSurfaceKHR createDisplaySurface(VkInstance instance, VkPhysicalDevice physicalDevice) {
+	VkSurfaceKHR surface;
+	uint32_t displayCount;
+	vkGetPhysicalDeviceDisplayPropertiesKHR(physicalDevice, &displayCount, NULL);
+
+	fprintf(stderr, "Found %u displays", displayCount);
+
 	return surface;
 }
 
@@ -1030,8 +1040,6 @@ VkCommandBuffer *createCommandBuffers(VkDevice device, VkPipeline pipeline, VkRe
 		VkDeviceSize offsets[] = {0};
 		vkCmdBindVertexBuffers(ret[i], 0, 1, vertexBuffers, offsets);
 
-
-
 		vkCmdDraw(ret[i], 3, 1, 0, 0);
 
 		vkCmdEndRenderPass(ret[i]);
@@ -1198,7 +1206,7 @@ int main() {
 
 	if (!glfwInit()) {
 		fprintf(stderr, "Failed to initialize GLFW!");
-		exit(EXIT_FAILURE);
+		//exit(EXIT_FAILURE);
 	}
 
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -1223,6 +1231,8 @@ int main() {
 	VkSurfaceKHR surface = createSurface(instance, window);
 
 	VkPhysicalDevice physicalDevice = getPhysicalDevice(instance);
+
+	createDisplaySurface(instance, physicalDevice);
 
 	struct QueueFamilyIndices queueFamilies = getQueueFamilies(surface, physicalDevice);
 

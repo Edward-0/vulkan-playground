@@ -3,7 +3,7 @@ project(vulkan-playground)
 enable_language(C)
 
 set(CMAKE_C_COMPILER /usr/bin/clang)
-set(CMAKE_C_FLAGS "-g" )
+set(CMAKE_C_FLAGS "-g")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(Vulkan REQUIRED)
@@ -11,7 +11,6 @@ find_package(OpenAL REQUIRED)
 find_package(glfw3 REQUIRED CONFIG)
 
 include_directories(${VULKAN_INCLUDE_DIRS})
-include_directories(${OPENAL_INCLUDE_DIR})
 include_directories(${GLFW3_INCLUDE_DIR})
 
 
@@ -30,6 +29,6 @@ add_custom_target(shaders ALL DEPENDS vert.spv frag.spv)
 
 add_executable(vulkan-playground src/main.c vert.spv frag.spv)
 
-target_link_libraries(vulkan-playground glfw vulkan openal)
+target_link_libraries(vulkan-playground glfw vulkan)
 
 install(TARGETS vulkan-playground)
